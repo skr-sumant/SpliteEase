@@ -62,7 +62,7 @@ export const buildPaymentReminderMessage = ({ fromName, toName, amount, groupNam
     ``,
     `━━━━━━━━━━━━━━━━━━━`,
     `💡 _Manage your expenses easily on SplitEase AI_`,
-    `🔗 ${process.env.CLIENT_URL || "http://localhost:5173"}`
+    `🔗 ${process.env.CLIENT_URL}`
   ].join("\n");
 };
 
@@ -85,7 +85,7 @@ export const buildExpenseNotificationMessage = ({ memberName, expenseTitle, amou
     `Log in to SplitEase to view your updated balance and splits.`,
     ``,
     `━━━━━━━━━━━━━━━━━━━`,
-    `🔗 ${process.env.CLIENT_URL || "http://localhost:5173"}`
+    `🔗 ${process.env.CLIENT_URL}`
   ].join("\n");
 };
 
@@ -112,6 +112,6 @@ export const buildBalanceSummaryMessage = ({ memberName, groupName, settlements,
     ``,
     `━━━━━━━━━━━━━━━━━━━`,
     `💡 _View detailed breakdown on SplitEase AI_`,
-    `🔗 ${process.env.CLIENT_URL || "http://localhost:5173"}`
+    `🔗 ${process.env.CLIENT_URL}`
   ].join("\n");
 };

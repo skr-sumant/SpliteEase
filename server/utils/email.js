@@ -113,7 +113,7 @@ export const sendOTP = async (email, name, otp) => {
 // 📧 Send Group Invite Email
 export const sendInvite = async (email, inviterName, groupName) => {
   const subject = `Join ${inviterName} on SplitEase AI!`;
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const clientUrl = process.env.CLIENT_URL;
   const html = `
     <div style="background-color: #f3f4f6; padding: 40px 20px; font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: left;">
       <div style="max-width: 540px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; box-shadow: 0 10px 30px rgba(39, 24, 126, 0.08); overflow: hidden; border: 1px solid #e5e7eb;">
@@ -179,7 +179,7 @@ export const sendInvite = async (email, inviterName, groupName) => {
 // 📧 Send Payment Reminder Email
 export const sendPaymentReminder = async (email, fromName, toName, amount, groupName, currency = "INR") => {
   const symbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "₹";
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const clientUrl = process.env.CLIENT_URL;
   const subject = `💸 Payment Reminder — You owe ${symbol}${Number(amount).toFixed(2)} in "${groupName}"`;
   const html = `
     <div style="background-color: #f3f4f6; padding: 40px 20px; font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: left;">
@@ -233,7 +233,7 @@ export const sendPaymentReminder = async (email, fromName, toName, amount, group
 // 📧 Send New Expense Notification Email
 export const sendExpenseNotification = async (email, memberName, expenseTitle, amount, paidByName, groupName, currency = "INR") => {
   const symbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "₹";
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const clientUrl = process.env.CLIENT_URL;
   const subject = `📝 New Expense "${expenseTitle}" added to "${groupName}" — ${symbol}${Number(amount).toFixed(2)}`;
   const html = `
     <div style="background-color: #f3f4f6; padding: 40px 20px; font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: left;">
@@ -290,7 +290,7 @@ export const sendExpenseNotification = async (email, memberName, expenseTitle, a
 // 📧 Send Balance Summary Email
 export const sendBalanceSummary = async (email, memberName, groupName, settlements, currency = "INR") => {
   const symbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : "₹";
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const clientUrl = process.env.CLIENT_URL;
   const subject = `📊 Balance Summary for "${groupName}" — SplitEase AI`;
 
   let settlementRows = `<div style="text-align: center; padding: 15px; color: #16a34a; font-weight: 700; font-size: 14px;">✅ All settled — no pending payments!</div>`;

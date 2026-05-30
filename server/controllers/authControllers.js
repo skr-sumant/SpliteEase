@@ -9,7 +9,7 @@ import Expense from "../models/Expense.js";
 
 dotenv.config();
 
-const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+const CLIENT_URL = process.env.CLIENT_URL;
 
 const createToken = (userId) => {
     return jwt.sign(
@@ -28,14 +28,14 @@ const getOAuthConfig = (provider) => {
         return {
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            redirectUri: process.env.GOOGLE_CALLBACK_URL || "http://localhost:5000/api/auth/google/callback"
+            redirectUri: process.env.GOOGLE_CALLBACK_URL
         };
     }
 
     return {
         clientId: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        redirectUri: process.env.GITHUB_CALLBACK_URL || "http://localhost:5000/api/auth/github/callback"
+        redirectUri: process.env.GITHUB_CALLBACK_URL
     };
 };
 
