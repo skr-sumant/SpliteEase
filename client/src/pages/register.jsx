@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Sparkles, House, ShieldCheck, ArrowRight, Zap, CheckCircle2, AlertCircle } from "lucide-react";
 import { syncFirebaseAuth } from "../services/api";
-import { loginWithGoogleFirebase, loginWithGithubFirebase } from "../config/firebase";
+import { loginWithGoogleFirebase, loginWithGithubFirebase, checkRedirectAuthResult } from "../config/firebase";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -12,14 +12,44 @@ const Auth = () => {
   const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   useEffect(() => {
-    // Only auto-redirect if there's an existing token
+    // Check if user is completing sign-in via redirect fallback (e.g. when popup is blocked)
+    const handleRedirectResult = async () => {
+      try {
+        const redirectRes = await checkRedirectAuthResult();
+        if (redirectRes && redirectRes.user) {
+          setLoading(true);
+          setMessage("Completing sign in...");
+          const { user, provider } = redirectRes;
+          const syncRes = await syncFirebaseAuth({
+            email: user.email || `${user.uid}@firebase.user`,
+            name: user.displayName || user.email?.split("@")[0] || "User",
+            provider: provider || "google",
+            providerId: user.uid,
+            avatar: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.email || user.uid)}`
+          });
+
+          if (syncRes.data && syncRes.data.token) {
+            localStorage.setItem("token", syncRes.data.token);
+            if (syncRes.data.user) {
+              localStorage.setItem("user_details", JSON.stringify(syncRes.data.user));
+            }
+            navigate("/dashboard");
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Firebase redirect result handling failed:", err);
+      }
+    };
+
+    handleRedirectResult();
+
+    // Auto-redirect if there's an existing token
     const existingToken = localStorage.getItem("token");
     if (existingToken) {
       navigate("/dashboard");
     }
   }, [navigate]);
-
-
 
   const handleSocialAuth = async (providerType) => {
     setLoading(true);
@@ -32,6 +62,16 @@ const Auth = () => {
         result = await loginWithGoogleFirebase();
       } else {
         result = await loginWithGithubFirebase();
+      }
+
+      if (result && result.redirecting) {
+        setMessage("Popup was blocked by your browser. Redirecting to provider login...");
+        return;
+      }
+
+      if (!result || !result.user) {
+        setMessage("Sign in failed. Please try again.");
+        return;
       }
 
       const { user } = result;
@@ -58,19 +98,21 @@ const Auth = () => {
       console.error(`Firebase ${providerType} Auth Error:`, error);
 
       const errCode = error.code || "";
-      if (errCode === "auth/popup-closed-by-user" || error.message?.includes("closed")) {
-        setMessage("Google sign-in popup was closed. Click below to try again or use Quick Demo Login.");
+      if (errCode === "auth/popup-blocked") {
+        setMessage("Popup blocked by browser. Please allow popups for this domain or wait while we redirect you.");
+      } else if (errCode === "auth/popup-closed-by-user" || error.message?.includes("closed")) {
+        setMessage("Sign-in popup was closed before completing.");
       } else if (errCode === "auth/unauthorized-domain") {
-        setMessage("This domain (localhost) is not authorized in your Firebase Auth Console.");
+        setMessage(`Domain (${window.location.hostname}) is not authorized in Firebase Console -> Authentication -> Settings -> Authorized Domains.`);
         setShowSetupGuide(true);
       } else if (errCode === "auth/operation-not-allowed") {
         setMessage(`${providerType === "google" ? "Google" : "GitHub"} sign-in is not enabled in your Firebase Auth Console yet.`);
         setShowSetupGuide(true);
       } else if (errCode === "auth/invalid-api-key" || errCode === "auth/api-key-not-valid") {
-        setMessage("Firebase API Key in client/.env is not configured yet. Click Quick Demo Login below!");
+        setMessage("Firebase API Key in client environment variables is invalid.");
         setShowSetupGuide(true);
       } else {
-        setMessage(error.message || `${providerType} sign in failed. Use Quick Demo Login below to test!`);
+        setMessage(error.message || `${providerType} sign in failed.`);
       }
     } finally {
       setLoading(false);

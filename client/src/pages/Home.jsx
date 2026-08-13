@@ -423,7 +423,7 @@ export default function Home() {
       <footer className="border-t border-gray-200 bg-white py-8 px-6 text-center relative z-20">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="text-xs font-bold text-gray-400">
-            © {new Date().getFullYear()} SplitEase AI. All rights reserved.
+            © {new Date().getFullYear()} SplitEase AI. All rights reserved.| Made with 🩵 by sumant...
           </span>
 
           <div className="flex items-center gap-4 text-xs font-bold text-[#27187E]">
