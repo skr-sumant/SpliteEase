@@ -9,14 +9,14 @@ import {
   signOut
 } from "firebase/auth";
 
-// Firebase Configuration from Vite Environment Variables (with fallback)
+// Firebase Configuration from Vite Environment Variables (with fallbacks for production Vercel builds)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDPFabfpH5rhDaPX1Dry4q731EzAuriWQ4",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "sumant-s.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "sumant-s",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "sumant-s.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "184005723287",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:184005723287:web:6cfe76435b77c7a9fbd5d2"
 };
 
 // Initialize Firebase App
