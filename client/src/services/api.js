@@ -4,8 +4,13 @@ if (!import.meta.env.VITE_API_URL) {
   console.warn("⚠️ VITE_API_URL environment variable is missing! API requests will fall back to relative paths, which may fail on live deployments.");
 }
 
+const rawBaseURL = import.meta.env.VITE_API_URL || "https://spliteease.onrender.com/api";
+const cleanBaseURL = rawBaseURL.endsWith("/api") || rawBaseURL.endsWith("/api/")
+  ? rawBaseURL.replace(/\/$/, "")
+  : `${rawBaseURL.replace(/\/$/, "")}/api`;
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://spliteease.onrender.com/api"
+  baseURL: cleanBaseURL
 });
 
 // 🔐 Attach token automatically
