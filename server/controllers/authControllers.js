@@ -483,6 +483,7 @@ export const getProfile = async (req, res) => {
     }
 };
 
+
 // 🤖 AI Budget Advisor Chat
 export const aiChat = async (req, res) => {
     try {
@@ -504,27 +505,66 @@ export const aiChat = async (req, res) => {
                 const membersStr = group.members.map(m => m.name).join(", ");
                 const expensesListStr = expenses.slice(0, 10).map(e => `- ${e.title}: ₹${e.amount} paid by ${e.paidBy?.name || "Member"}`).join("\n");
                 
-                groupContext = `You are discussing the group "${group.name}". Members are: ${membersStr}. Total spent so far is ₹${totalSpent.toFixed(2)}.\nRecent expenses:\n${expensesListStr || "None"}\n`;
+                groupContext = `Context: Group "${group.name}". Members: ${membersStr}. Total spent: ₹${totalSpent.toFixed(2)}.\nRecent Expenses:\n${expensesListStr || "None"}\n`;
             }
         }
 
+        // 1. Try Google Gemini API if GEMINI_API_KEY is configured in server/.env
+        if (process.env.GEMINI_API_KEY) {
+            try {
+                const apiKey = process.env.GEMINI_API_KEY.trim();
+                const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-pro"];
+                const promptText = `You are SplitEase AI, an expert financial advisor specializing in expense tracking, group bill splitting, budgeting, and debt settlement. Provide helpful, concise advice using markdown formatting.\n${groupContext}\nUser question: ${message}`;
+
+                let lastError = null;
+
+                for (const modelName of modelsToTry) {
+                    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+                    const geminiRes = await fetch(geminiUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+                    });
+
+                    const geminiData = await geminiRes.json();
+                    const aiReply = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (aiReply) {
+                        return res.status(200).json({ reply: aiReply, response: aiReply, message: aiReply });
+                    }
+                    if (geminiData.error) {
+                        console.error(`Gemini API (${modelName}) error response:`, JSON.stringify(geminiData.error));
+                        lastError = geminiData.error.message || JSON.stringify(geminiData.error);
+                    }
+                }
+
+                if (lastError) {
+                    const errReply = `⚠️ **Gemini API Key Error:** ${lastError}\n\nPlease check your key in \`server/.env\`. Get a free API Key from **[Google AI Studio](https://aistudio.google.com/app/apikey)** (valid keys start with \`AIzaSy...\`).`;
+                    return res.status(200).json({ reply: errReply, response: errReply, message: errReply });
+                }
+            } catch (apiErr) {
+                console.error("Gemini API Exception:", apiErr);
+            }
+        }
+
+        
+
+        // 3. Fallback Built-in Smart Financial Rule Engine
         const cleanMsg = message.toLowerCase().trim();
         let reply = "";
 
-        // Premium smart matching rules
         if (cleanMsg.includes("settle") || cleanMsg.includes("debt") || cleanMsg.includes("pay back") || cleanMsg.includes("owe")) {
-            reply = `🤖 **SplitEase AI Financial Settle Advisor:**\n\nOptimizing your group's balances reduces multiple small transactions into the minimum number of payments possible. \n\n* **To settle debts optimally:**\n  1. Go to your active workspace's **Group Net Balances**.\n  2. Check the **Simplified Settlements** view.\n  3. Directly execute the suggested transactions (e.g. "Member A pays Member B ₹X").\n\nThis simple math algorithm prevents circular payments (e.g. Aditya paying Neha while Neha pays Aditya) and saves bank transfer efforts! Let me know if you want me to write a reminder message to send to your group.`;
+            reply = ` SplitEase AI Financial Settle Advisor: \n\nOptimizing your group's balances reduces multiple small transactions into the minimum number of payments possible. \n\n*  To settle debts optimally: \n  1. Go to your active workspace's  Group Net Balances .\n  2. Check the  Simplified Settlements  view.\n  3. Directly execute the suggested transactions (e.g. "Member A pays Member B ₹X").\n\nThis simple math algorithm prevents circular payments and saves bank transfer efforts! Let me know if you want me to write a reminder message to send to your group.`;
         } else if (cleanMsg.includes("habit") || cleanMsg.includes("spending") || cleanMsg.includes("summary") || cleanMsg.includes("insight")) {
-            reply = `🤖 **SplitEase AI Budget Analyzer Summary:**\n\nI scanned your group expense workspace context. Here's my intelligent breakdown of your current spending dynamics:\n\n* 📈 **Workspace Summary:** ${groupContext ? "Your group has registered items in different categories." : "Try logging some expenses in a group first!"}\n* 💡 **Efficiency Tip:** Make sure to scan physical bills using our **AI OCR Receipt Scanner** to save manual typing effort. This classifies items into categories automatically!\n* 🎯 **Smart Budget Nudge:** High-spending categories like *Food* and *Entertainment* usually account for 60%+ of group splits. Encourage roommates to cook together or share bulk transport rides to cut down!`;
+            reply = ` SplitEase AI Budget Analyzer Summary: \n\nI scanned your group expense workspace context. Here's my intelligent breakdown of your current spending dynamics:\n\n* 📈  Workspace Summary:  ${groupContext ? "Your group has registered items in different categories." : "Try logging some expenses in a group first!"}\n* 💡  Efficiency Tip:  Make sure to scan physical bills using our  AI OCR Receipt Scanner  to save manual typing effort. This classifies items into categories automatically!\n* 🎯  Smart Budget Nudge:  High-spending categories like *Food* and *Entertainment* usually account for 60%+ of group splits. Encourage roommates to cook together or share bulk transport rides to cut down!`;
         } else if (cleanMsg.includes("reminder") || cleanMsg.includes("nudge") || cleanMsg.includes("text") || cleanMsg.includes("message")) {
-            reply = `🤖 **AI Generated Settle Reminders:**\n\nHere are 3 distinct templates you can copy and customize to remind group members politely:\n\n💬 **Option 1 (Friendly & Direct):**\n> "Hey everyone! Just did a quick update of our expenses on **SplitEase AI**. When you get a moment, please check your outstanding simplified balance and settle up. No immediate rush! Thanks! 🙌"\n\n💬 **Option 2 (Casual):**\n> "Hey! Hope you're having a good day. Just a friendly nudge about our group workspace. Whenever it's convenient, you can clear your pending balance on SplitEase. Cheers! ☕"\n\n💬 **Option 3 (Roommate Rent/Groceries):**\n> "Hi guys! Our shared bills for this month have been calculated and split on **SplitEase**. Please check the dashboard to see your balance and transfer when you can so we remain completely settled! 🏡"`;
+            reply = ` AI Generated Settle Reminders: \n\nHere are 3 distinct templates you can copy and customize to remind group members politely:\n\n💬  Option 1 (Friendly & Direct): \n> "Hey everyone! Just did a quick update of our expenses on  SplitEase AI . When you get a moment, please check your outstanding simplified balance and settle up. No immediate rush! Thanks! 🙌"\n\n💬  Option 2 (Casual): \n> "Hey! Hope you're having a good day. Just a friendly nudge about our group workspace. Whenever it's convenient, you can clear your pending balance on SplitEase. Cheers! ☕"\n\n💬  Option 3 (Roommate Rent/Groceries): \n> "Hi guys! Our shared bills for this month have been calculated and split on  SplitEase . Please check the dashboard to see your balance and transfer when you can so we remain completely settled! 🏡"`;
         } else if (cleanMsg.includes("ocr") || cleanMsg.includes("scan") || cleanMsg.includes("camera") || cleanMsg.includes("bill")) {
-            reply = `🤖 **AI OCR Bill Scanner Tips:**\n\nOur scanner uses high-performance Tesseract OCR algorithms. To ensure 100% accurate results:\n\n1. 📸 **Lighting:** Capture receipt photos in well-lit environments (avoid harsh shadows).\n2. 📐 **Angle:** Align receipt text horizontally relative to your camera lens.\n3. 🔍 **Resolution:** Zoom in so individual character lines are clearly visible.\n\nOnce scanned, our engine parses line prices, sums them up, and gives you a single-click **Autofill Add Expense** button! Try it under the **Receipt Scanner** tab.`;
+            reply = ` AI OCR Bill Scanner Tips: \n\nOur scanner uses high-performance Tesseract OCR algorithms. To ensure 100% accurate results:\n\n1. 📸  Lighting:  Capture receipt photos in well-lit environments (avoid harsh shadows).\n2. 📐  Angle:  Align receipt text horizontally relative to your camera lens.\n3. 🔍  Resolution:  Zoom in so individual character lines are clearly visible.\n\nOnce scanned, our engine parses line prices, sums them up, and gives you a single-click  Autofill Add Expense  button! Try it under the  Receipt Scanner  tab.`;
         } else {
-            reply = `🤖 **Hello! I am your SplitEase AI Financial Advisor.**\n\nI can analyze your group's shared expense workspace, optimize settlements, draft reminder messages, or help you debug your budget!\n\nHere are some things you can ask me:\n* 💡 *"Give me a summary of our group's spending habits."*\n* 💸 *"How can we settle our group debts optimally?"*\n* 💬 *"Can you write a polite reminder message I can send to people who owe me money?"*\n* 📸 *"How does the AI OCR Receipt Scanner work?"*\n\nFeel free to type any budget or settlement query and I will help you track and save!`;
+            reply = ` Hello! I am your SplitEase AI Financial Advisor. \n\nI can analyze your group's shared expense workspace, optimize settlements, draft reminder messages, or help you debug your budget!\n\nHere are some things you can ask me:\n* 💡 *"Give me a summary of our group's spending habits."*\n* 💸 *"How can we settle our group debts optimally?"*\n* 💬 *"Can you write a polite reminder message I can send to people who owe me money?"*\n* 📸 *"How does the AI OCR Receipt Scanner work?"*\n\nFeel free to type any budget or settlement query and I will help you track and save!`;
         }
 
-        res.status(200).json({ reply });
+        res.status(200).json({ reply, response: reply, message: reply });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

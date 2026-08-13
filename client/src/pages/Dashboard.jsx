@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaMoneyBillWave, FaUsers, FaWallet, FaChartLine } from "react-icons/fa";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Users,
   IndianRupee,
@@ -10,8 +12,13 @@ import {
   Camera,
   Check,
   ChevronRight,
+  ChevronLeft,
   Calculator,
-  UserPlus
+  UserPlus,
+  Calendar,
+  Download,
+  FileSpreadsheet,
+  FileText
 } from "lucide-react";
 import {
   getGroups,
@@ -139,6 +146,226 @@ export default function Dashboard() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifMessage, setNotifMessage] = useState("");
 
+  // Month-wise Filtering & Record Navigation State
+  const getCurrentMonthKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey()); // e.g. "2026-08" or "ALL"
+
+  // Format YYYY-MM into "August 2026"
+  const formatMonthLabel = (monthKey) => {
+    if (!monthKey || monthKey === "ALL") return "All Months";
+    const [year, month] = monthKey.split("-");
+    const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  };
+
+  // Move forward or backward month-wise
+  const shiftMonth = (offset) => {
+    let currentKey = selectedMonth;
+    if (currentKey === "ALL") {
+      currentKey = getCurrentMonthKey();
+    }
+    const [year, month] = currentKey.split("-").map(Number);
+    const targetDate = new Date(year, month - 1 + offset, 1);
+    const newKey = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, "0")}`;
+    setSelectedMonth(newKey);
+  };
+
+  // Collect all months available from personal and group expenses
+  const getAvailableMonthOptions = () => {
+    const monthsSet = new Set();
+    const now = new Date();
+    for (let i = -6; i <= 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      monthsSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+
+    personalExpenses.forEach((exp) => {
+      if (exp.createdAt) {
+        const d = new Date(exp.createdAt);
+        monthsSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+      }
+    });
+
+    expenses.forEach((exp) => {
+      if (exp.createdAt) {
+        const d = new Date(exp.createdAt);
+        monthsSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+      }
+    });
+
+    return Array.from(monthsSet).sort().reverse();
+  };
+
+  // Filter personal expenses by selected month
+  const filteredPersonalExpenses = personalExpenses.filter((exp) => {
+    if (selectedMonth === "ALL") return true;
+    if (!exp.createdAt) return true;
+    const d = new Date(exp.createdAt);
+    const expKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return expKey === selectedMonth;
+  });
+
+  // Filter group expenses by selected month
+  const filteredGroupExpenses = expenses.filter((exp) => {
+    if (selectedMonth === "ALL") return true;
+    if (!exp.createdAt) return true;
+    const d = new Date(exp.createdAt);
+    const expKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return expKey === selectedMonth;
+  });
+
+  // Combined records for selected month (Personal + Group)
+  const combinedMonthRecords = [
+    ...filteredPersonalExpenses.map(e => ({ ...e, isPersonal: true })),
+    ...filteredGroupExpenses.map(e => ({ ...e, isPersonal: false }))
+  ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+  // CSV Exporter for records
+  const handleExportCSV = (recordsToExport, periodTitle = "") => {
+    const records = recordsToExport && recordsToExport.length > 0 ? recordsToExport : combinedMonthRecords;
+    if (!records || records.length === 0) {
+      alert("No expense records available to download for " + (periodTitle || formatMonthLabel(selectedMonth)));
+      return;
+    }
+
+    const headers = ["Date", "Description/Item", "Type", "Category", "Amount (INR)", "Paid By", "Group Name"];
+    const csvRows = [headers.join(",")];
+
+    records.forEach((exp) => {
+      const dateStr = exp.createdAt ? new Date(exp.createdAt).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "N/A";
+      const titleStr = `"${(exp.title || "Expense").replace(/"/g, '""')}"`;
+      const typeStr = exp.isPersonal || !exp.group ? "Personal" : "Group";
+      const categoryStr = `"${(exp.category || "Other").replace(/"/g, '""')}"`;
+      const amountStr = (exp.amount || 0).toFixed(2);
+      const paidByStr = `"${(exp.paidBy?.name || (typeStr === "Personal" ? profile.name || "Me" : "Member")).replace(/"/g, '""')}"`;
+      const groupNameStr = exp.group?.name ? `"${exp.group.name.replace(/"/g, '""')}"` : (typeStr === "Group" && activeGroup ? `"${activeGroup.name.replace(/"/g, '""')}"` : "Personal Expense");
+
+      csvRows.push([dateStr, titleStr, typeStr, categoryStr, amountStr, paidByStr, groupNameStr].join(","));
+    });
+
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    const cleanLabel = (periodTitle || formatMonthLabel(selectedMonth)).replace(/[^a-zA-Z0-9]/g, "_");
+    link.setAttribute("download", `SplitEase_Expenses_${cleanLabel}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // PDF Exporter for records
+  const handleExportPDF = (recordsToExport, periodTitle = "") => {
+    const records = recordsToExport && recordsToExport.length > 0 ? recordsToExport : combinedMonthRecords;
+    const monthName = periodTitle || formatMonthLabel(selectedMonth);
+
+    if (!records || records.length === 0) {
+      alert("No expense records available to download as PDF for " + monthName);
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const totalAmount = records.reduce((sum, r) => sum + (r.amount || 0), 0);
+
+    const primaryColor = [39, 24, 126]; // #27187E
+    const darkTextColor = [30, 41, 59];
+
+    // Header Banner
+    doc.setFillColor(...primaryColor);
+    doc.rect(0, 0, 210, 36, "F");
+
+    // Title & Subtitle inside Header
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text("SplitEase AI", 14, 16);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("Monthly Spending & Expense Statement", 14, 24);
+
+    doc.setFontSize(8.5);
+    doc.text(`Generated: ${new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, 196, 24, { align: "right" });
+
+    // Summary Card Box Below Header
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(14, 42, 182, 22, 3, 3, "F");
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(14, 42, 182, 22, 3, 3, "S");
+
+    doc.setTextColor(...darkTextColor);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Period: ${monthName}`, 18, 51);
+    doc.text(`Total Records: ${records.length}`, 18, 58);
+
+    doc.setTextColor(...primaryColor);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total Spent: Rs. ${totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 192, 55, { align: "right" });
+
+    // Table Rows Formatting
+    const tableRows = records.map((exp, idx) => {
+      const dateStr = exp.createdAt ? new Date(exp.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "N/A";
+      const typeStr = exp.isPersonal || !exp.group ? "Personal" : `Group: ${exp.group?.name || activeGroup?.name || "Shared"}`;
+      const categoryStr = exp.category || "Other";
+      const amountStr = `Rs. ${(exp.amount || 0).toFixed(2)}`;
+
+      return [idx + 1, dateStr, exp.title || "Expense", typeStr, categoryStr, amountStr];
+    });
+
+    autoTable(doc, {
+      startY: 70,
+      head: [["#", "Date", "Description / Item", "Type", "Category", "Amount"]],
+      body: tableRows,
+      theme: "striped",
+      headStyles: {
+        fillColor: primaryColor,
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9
+      },
+      bodyStyles: {
+        fontSize: 8.5,
+        textColor: darkTextColor
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: "center" },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 55 },
+        3: { cellWidth: 40 },
+        4: { cellWidth: 25 },
+        5: { cellWidth: 24, halign: "right", fontStyle: "bold" }
+      },
+      foot: [["", "", "Total Monthly Expenditure", "", "", `Rs. ${totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`]],
+      footStyles: {
+        fillColor: [238, 242, 255],
+        textColor: primaryColor,
+        fontStyle: "bold",
+        fontSize: 9.5
+      },
+      didDrawPage: (data) => {
+        const pageCount = doc.internal.getNumberOfPages();
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `SplitEase AI Statement • Page ${data.pageNumber} of ${pageCount}`,
+          105,
+          290,
+          { align: "center" }
+        );
+      }
+    });
+
+    const cleanLabel = monthName.replace(/[^a-zA-Z0-9]/g, "_");
+    doc.save(`SplitEase_Expenses_${cleanLabel}.pdf`);
+  };
+
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -207,7 +434,7 @@ export default function Dashboard() {
 
     try {
       const res = await sendAiMessage(textToSend, activeGroup?._id || null);
-      const aiReply = res.data?.response || res.data?.message || "AI was unable to respond.";
+      const aiReply = res.data?.reply || res.data?.response || res.data?.message || "AI was unable to respond.";
       setAiChatHistory((prev) => [...prev, { sender: "ai", text: aiReply }]);
     } catch (err) {
       setAiChatHistory((prev) => [
@@ -926,6 +1153,84 @@ export default function Dashboard() {
         {/* TAB 0: PERSONAL EXPENSES TRACKER */}
         {activeTab === "personal" && (
           <div className="flex flex-col gap-6 animate-fadeIn">
+            {/* MONTH-WISE NAVIGATOR & DOWNLOAD HEADER BAR */}
+            <div className="bg-gradient-to-r from-[#27187E] via-[#3B28B0] to-[#5C4BD6] text-white rounded-3xl p-5 md:p-6 shadow-xl flex flex-col md:flex-row items-center justify-between gap-5 border border-white/10 relative overflow-hidden">
+              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-56 h-56 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+
+              {/* Month Selector & Controls */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5 w-full md:w-auto">
+                <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md p-1.5 rounded-2xl border border-white/20 shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => shiftMonth(-1)}
+                    className="h-10 px-3.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs cursor-pointer border-0 transition flex items-center gap-1 active:scale-95"
+                    title="Previous Month"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Prev</span>
+                  </button>
+
+                  <div className="flex items-center gap-2 px-3">
+                    <Calendar className="h-4.5 w-4.5 text-[#758BFD]" />
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="bg-transparent text-white font-black text-sm md:text-base outline-none cursor-pointer border-0 py-1"
+                      style={{ colorScheme: "dark" }}
+                    >
+                      <option value="ALL" className="bg-[#111827] text-white">All Months</option>
+                      {getAvailableMonthOptions().map((mKey) => (
+                        <option key={mKey} value={mKey} className="bg-[#111827] text-white">
+                          {formatMonthLabel(mKey)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => shiftMonth(1)}
+                    className="h-10 px-3.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs cursor-pointer border-0 transition flex items-center gap-1 active:scale-95"
+                    title="Next Month"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Status summary & Download CSV Button */}
+              <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-white/15">
+                <div className="text-left md:text-right">
+                  <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest block">Active Month</span>
+                  <span className="text-sm font-black text-white">
+                    {formatMonthLabel(selectedMonth)} ({combinedMonthRecords.length} records)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleExportPDF(combinedMonthRecords, formatMonthLabel(selectedMonth))}
+                    className="h-11 px-4.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black cursor-pointer border-0 transition shadow-lg shadow-rose-900/30 flex items-center gap-2 active:scale-95 shrink-0"
+                    title="Download PDF report statement for this month"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>Download PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportCSV(combinedMonthRecords, formatMonthLabel(selectedMonth))}
+                    className="h-11 px-3.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white text-xs font-extrabold cursor-pointer border border-white/20 transition flex items-center gap-1.5 active:scale-95 shrink-0"
+                    title="Export CSV data"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>CSV</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Top row: Add Personal Expense Form + Summary Card */}
             <div className="grid gap-6 lg:grid-cols-12 items-start">
               {/* Add Personal Expense Form */}
@@ -1006,7 +1311,7 @@ export default function Dashboard() {
               {/* Personal Expenditure & Monthly Spend Limit Card */}
               <div className="lg:col-span-5 rounded-2xl border border-gray-100 bg-white p-5 md:p-6 shadow-sm flex flex-col justify-between min-h-[240px]">
                 {(() => {
-                  const totalSpent = personalExpenses.reduce((sum, e) => sum + e.amount, 0);
+                  const totalSpent = filteredPersonalExpenses.reduce((sum, e) => sum + e.amount, 0);
                   const percentageUsed = Math.min(100, Math.round((totalSpent / Math.max(1, monthlyBudget)) * 100));
                   const isOverLimit = totalSpent > monthlyBudget;
                   const isNearLimit = percentageUsed >= 80 && !isOverLimit;
@@ -1014,7 +1319,9 @@ export default function Dashboard() {
                   return (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Monthly Spend Limit</span>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                          {formatMonthLabel(selectedMonth)} Spend Limit
+                        </span>
                         <button
                           type="button"
                           onClick={() => setIsEditingBudget(!isEditingBudget)}
@@ -1105,23 +1412,39 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Personal Expenses List */}
+            {/* Personal Expenses List for Selected Month */}
             <div className="rounded-2xl border border-gray-100 bg-white p-5 md:p-6 shadow-sm flex flex-col gap-4">
               <div className="flex items-center justify-between">
-                <h3 className="m-0 text-sm font-black text-[#27187E] uppercase tracking-wider">Personal Expenses Feed</h3>
-                <span className="text-[10px] bg-indigo-50 text-[#27187E] px-2.5 py-1 rounded-full font-bold">
-                  {personalExpenses.length} logged
-                </span>
+                <div className="flex items-center gap-2">
+                  <h3 className="m-0 text-sm font-black text-[#27187E] uppercase tracking-wider">
+                    Personal Expenses — {formatMonthLabel(selectedMonth)}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] bg-indigo-50 text-[#27187E] px-2.5 py-1 rounded-full font-bold">
+                    {filteredPersonalExpenses.length} logged
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleExportPDF(filteredPersonalExpenses, `Personal_${formatMonthLabel(selectedMonth)}`)}
+                    className="h-8 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-black cursor-pointer border border-rose-200 transition flex items-center gap-1"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Export PDF
+                  </button>
+                </div>
               </div>
 
-              {personalExpenses.length === 0 ? (
+              {filteredPersonalExpenses.length === 0 ? (
                 <div className="text-center py-10 bg-[#F8F9FA] rounded-xl border border-dashed border-gray-200 flex flex-col items-center gap-2">
                   <span className="text-3xl">📝</span>
-                  <p className="text-xs font-bold text-gray-400 m-0">No personal expenses logged yet. Add your first expense above or scan a receipt!</p>
+                  <p className="text-xs font-bold text-gray-400 m-0">
+                    No personal expenses recorded for {formatMonthLabel(selectedMonth)}. Use the form above to log expenses for this month!
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-1">
-                  {personalExpenses.map((exp) => (
+                  {filteredPersonalExpenses.map((exp) => (
                     <div key={exp._id} className="flex items-center justify-between gap-3 p-3.5 bg-[#F8F9FA] rounded-xl border border-gray-100 transition hover:border-gray-200">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="h-9 w-9 rounded-xl bg-[#27187E]/10 flex items-center justify-center text-[#27187E] font-black text-sm shrink-0">
@@ -1149,6 +1472,87 @@ export default function Dashboard() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* UNIFIED MONTHLY RECORDS & SPENDING TABLE (Personal + Group Combined) */}
+            <div className="rounded-3xl border border-indigo-100 bg-white p-5 md:p-6 shadow-sm flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                <div>
+                  <h3 className="m-0 text-base font-black text-[#27187E] flex items-center gap-2">
+                    <FileSpreadsheet className="h-5 w-5 text-[#758BFD]" />
+                    Complete Monthly Spending Log — {formatMonthLabel(selectedMonth)}
+                  </h3>
+                  <p className="m-0 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                    All personal and group records for {formatMonthLabel(selectedMonth)} in one place
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExportPDF(combinedMonthRecords, `Full_Records_${formatMonthLabel(selectedMonth)}`)}
+                    className="h-9 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black cursor-pointer border-0 transition flex items-center gap-1.5 shadow-sm shrink-0"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Download PDF Report
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportCSV(combinedMonthRecords, `Full_Records_${formatMonthLabel(selectedMonth)}`)}
+                    className="h-9 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-[#27187E] text-xs font-bold cursor-pointer border-0 transition flex items-center gap-1 shrink-0"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    CSV
+                  </button>
+                </div>
+              </div>
+
+              {combinedMonthRecords.length === 0 ? (
+                <div className="text-center py-8 bg-[#F8F9FA] rounded-xl border border-dashed border-gray-200">
+                  <p className="text-xs font-bold text-gray-400 m-0">No records found for {formatMonthLabel(selectedMonth)}.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-[10px] font-black uppercase text-gray-400 tracking-wider">
+                        <th className="py-2.5 px-3">Date</th>
+                        <th className="py-2.5 px-3">Description</th>
+                        <th className="py-2.5 px-3">Type</th>
+                        <th className="py-2.5 px-3">Category</th>
+                        <th className="py-2.5 px-3 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs font-medium">
+                      {combinedMonthRecords.map((rec) => (
+                        <tr key={rec._id} className="hover:bg-gray-50/80 transition">
+                          <td className="py-3 px-3 text-gray-500 font-bold whitespace-nowrap">
+                            {rec.createdAt ? new Date(rec.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "N/A"}
+                          </td>
+                          <td className="py-3 px-3 font-extrabold text-[#27187E]">
+                            {rec.title}
+                          </td>
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                              rec.isPersonal
+                                ? "bg-indigo-100 text-[#27187E]"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}>
+                              {rec.isPersonal ? "Personal" : `Group: ${rec.group?.name || "Shared"}`}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-gray-500 font-bold whitespace-nowrap">
+                            {rec.category || "Other"}
+                          </td>
+                          <td className="py-3 px-3 text-right font-black text-[#27187E] whitespace-nowrap">
+                            ₹{(rec.amount || 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -1465,9 +1869,27 @@ export default function Dashboard() {
                   <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm flex flex-col gap-3">
                     <div className="flex justify-between items-center">
                       <h3 className="m-0 text-xs font-black uppercase tracking-wider text-gray-400">Recent Group Expenses</h3>
-                      <span className="text-[10px] bg-indigo-50 text-[#27187E] px-2 py-0.5 rounded-full font-bold">
-                        {expenses.length} total
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-indigo-50 text-[#27187E] px-2 py-0.5 rounded-full font-bold">
+                          {expenses.length} total
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleExportPDF(expenses.map(e => ({ ...e, group: activeGroup })), `Group_${activeGroup?.name || "Expenses"}`)}
+                          className="h-7 px-2.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-black cursor-pointer border border-rose-200 transition flex items-center gap-1"
+                        >
+                          <FileText className="h-3 w-3" />
+                          Export PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleExportCSV(expenses.map(e => ({ ...e, group: activeGroup })), `Group_${activeGroup?.name || "Expenses"}`)}
+                          className="h-7 px-2.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-[#27187E] text-[10px] font-black cursor-pointer border-0 transition flex items-center gap-1"
+                        >
+                          <Download className="h-3 w-3" />
+                          CSV
+                        </button>
+                      </div>
                     </div>
 
                     {expenses.length === 0 ? (
