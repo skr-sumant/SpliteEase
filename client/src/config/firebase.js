@@ -1,6 +1,8 @@
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
+  setPersistence,
+  browserLocalPersistence,
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
@@ -24,6 +26,10 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Auth & Providers
 export const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.warn("Firebase persistence configuration notice:", err);
+});
+
 export const googleProvider = new GoogleAuthProvider();
 export const githubProvider = new GithubAuthProvider();
 
@@ -34,11 +40,13 @@ export const loginWithGoogleFirebase = async () => {
     const token = await userCredential.user.getIdToken();
     return { user: userCredential.user, token };
   } catch (error) {
-    if (error.code === "auth/popup-blocked") {
+    console.warn("Google popup login encountered error, falling back to redirect:", error);
+    try {
       await signInWithRedirect(auth, googleProvider);
       return { redirecting: true };
+    } catch (redirectErr) {
+      throw error;
     }
-    throw error;
   }
 };
 
@@ -48,11 +56,13 @@ export const loginWithGithubFirebase = async () => {
     const token = await userCredential.user.getIdToken();
     return { user: userCredential.user, token };
   } catch (error) {
-    if (error.code === "auth/popup-blocked") {
+    console.warn("GitHub popup login encountered error, falling back to redirect:", error);
+    try {
       await signInWithRedirect(auth, githubProvider);
       return { redirecting: true };
+    } catch (redirectErr) {
+      throw error;
     }
-    throw error;
   }
 };
 
@@ -61,7 +71,8 @@ export const checkRedirectAuthResult = async () => {
     const result = await getRedirectResult(auth);
     if (result && result.user) {
       const token = await result.user.getIdToken();
-      const provider = result.providerId || (result.user.providerData[0]?.providerId.includes("google") ? "google" : "github");
+      const firstProvider = result.user.providerData?.[0]?.providerId || "";
+      const provider = firstProvider.includes("google") ? "google" : firstProvider.includes("github") ? "github" : "google";
       return { user: result.user, token, provider };
     }
   } catch (error) {
