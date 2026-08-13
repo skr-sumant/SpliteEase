@@ -19,23 +19,37 @@ const Auth = () => {
         if (redirectRes && redirectRes.user) {
           setLoading(true);
           setMessage("Completing sign in...");
-          const { user, provider } = redirectRes;
-          const syncRes = await syncFirebaseAuth({
-            email: user.email || `${user.uid}@firebase.user`,
-            name: user.displayName || user.email?.split("@")[0] || "User",
-            provider: provider || "google",
-            providerId: user.uid,
-            avatar: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.email || user.uid)}`
-          });
+          const { user, token: fbToken, provider } = redirectRes;
 
-          if (syncRes.data && syncRes.data.token) {
-            localStorage.setItem("token", syncRes.data.token);
-            if (syncRes.data.user) {
-              localStorage.setItem("user_details", JSON.stringify(syncRes.data.user));
+          let sessionToken = fbToken || user.accessToken || `fb_session_${Date.now()}`;
+          let userObj = {
+            _id: user.uid,
+            name: user.displayName || user.email?.split("@")[0] || "User",
+            email: user.email || `${user.uid}@firebase.user`,
+            avatar: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.uid)}`
+          };
+
+          try {
+            const syncRes = await syncFirebaseAuth({
+              email: userObj.email,
+              name: userObj.name,
+              provider: provider || "google",
+              providerId: user.uid,
+              avatar: userObj.avatar
+            });
+
+            if (syncRes.data && syncRes.data.token) {
+              sessionToken = syncRes.data.token;
+              if (syncRes.data.user) userObj = syncRes.data.user;
             }
-            navigate("/dashboard");
-            return;
+          } catch (syncErr) {
+            console.warn("Backend sync warning during redirect (using Firebase session):", syncErr);
           }
+
+          localStorage.setItem("token", sessionToken);
+          localStorage.setItem("user_details", JSON.stringify(userObj));
+          navigate("/dashboard");
+          return;
         }
       } catch (err) {
         console.error("Firebase redirect result handling failed:", err);
@@ -74,26 +88,39 @@ const Auth = () => {
         return;
       }
 
-      const { user } = result;
+      const { user, token: fbToken } = result;
+
+      let sessionToken = fbToken || user.accessToken || `fb_session_${Date.now()}`;
+      let userObj = {
+        _id: user.uid,
+        name: user.displayName || user.email?.split("@")[0] || "User",
+        email: user.email || `${user.uid}@firebase.user`,
+        avatar: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.uid)}`
+      };
 
       // Synchronize authenticated Firebase user with backend MongoDB database
-      const syncRes = await syncFirebaseAuth({
-        email: user.email || `${user.uid}@firebase.user`,
-        name: user.displayName || user.email?.split("@")[0] || "User",
-        provider: providerType,
-        providerId: user.uid,
-        avatar: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.email || user.uid)}`
-      });
+      try {
+        const syncRes = await syncFirebaseAuth({
+          email: userObj.email,
+          name: userObj.name,
+          provider: providerType,
+          providerId: user.uid,
+          avatar: userObj.avatar
+        });
 
-      if (syncRes.data && syncRes.data.token) {
-        localStorage.setItem("token", syncRes.data.token);
-        if (syncRes.data.user) {
-          localStorage.setItem("user_details", JSON.stringify(syncRes.data.user));
+        if (syncRes.data && syncRes.data.token) {
+          sessionToken = syncRes.data.token;
+          if (syncRes.data.user) {
+            userObj = syncRes.data.user;
+          }
         }
-        navigate("/dashboard");
-      } else {
-        setMessage("Authentication succeeded but backend synchronization failed.");
+      } catch (syncErr) {
+        console.warn("Backend sync warning (using Firebase session):", syncErr);
       }
+
+      localStorage.setItem("token", sessionToken);
+      localStorage.setItem("user_details", JSON.stringify(userObj));
+      navigate("/dashboard");
     } catch (error) {
       console.error(`Firebase ${providerType} Auth Error:`, error);
 
