@@ -14,7 +14,13 @@ const expenseSchema = new mongoose.Schema(
 
     group: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Group"
+      ref: "Group",
+      default: null
+    },
+
+    isPersonal: {
+      type: Boolean,
+      default: false
     },
 
     paidBy: {

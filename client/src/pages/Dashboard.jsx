@@ -31,7 +31,10 @@ import {
   sendAiMessage,
   deleteAccount,
   sendPaymentReminderAPI,
-  sendBulkRemindersAPI
+  sendBulkRemindersAPI,
+  addPersonalExpense,
+  getPersonalExpenses,
+  deleteExpense
 } from "../services/api";
 
 // Premium Subcomponents
@@ -40,6 +43,7 @@ import Topbar from "../components/dashboard/Topbar";
 import StatCard from "../components/dashboard/StatCard";
 import ExpensePieChart from "../components/dashboard/ExpensePieChart";
 import MonthlyChart from "../components/dashboard/MonthlyChart";
+import PersonalExpenseChart from "../components/dashboard/PersonalExpenseChart";
 import InsightsCard from "../components/dashboard/InsightsCard";
 import ManageGroupPanel from "../components/dashboard/ManageGroupPanel";
 import NotificationPanel from "../components/dashboard/NotificationPanel";
@@ -90,14 +94,35 @@ export default function Dashboard() {
   const [ocrGrandTotal, setOcrGrandTotal] = useState(0);
   const [isReconciling, setIsReconciling] = useState(false);
 
+  // Personal Expenses & Budget Limit State
+  const [personalExpenses, setPersonalExpenses] = useState([]);
+  const [personalTitle, setPersonalTitle] = useState("");
+  const [personalAmount, setPersonalAmount] = useState("");
+  const [personalCategory, setPersonalCategory] = useState("Other");
+  const [personalLoading, setPersonalLoading] = useState(false);
+  const [monthlyBudget, setMonthlyBudget] = useState(10000);
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [tempBudgetInput, setTempBudgetInput] = useState("10000");
+
+  // AI Chat Advisor State
+  const [aiMessageInput, setAiMessageInput] = useState("");
+  const [aiChatHistory, setAiChatHistory] = useState([
+    {
+      sender: "ai",
+      text: "👋 Hi! I am **SplitEase AI**, your personal financial assistant. Ask me anything about your spending habits, debt settlements, budget limits, or draft polite reminder messages for your group!"
+    }
+  ]);
+  const [aiChatLoading, setAiChatLoading] = useState(false);
+
   // UI Tabs
-  const [activeTab, setActiveTab] = useState("groups"); // "groups", "add-expense", "ocr-scan", "analytics"
+  const [activeTab, setActiveTab] = useState("personal"); // "personal", "groups", "add-expense", "ocr-scan", "analytics", "ai-advisor"
   const [statusMessage, setStatusMessage] = useState("");
 
   // Analytics State
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState("");
+  const [analyticsSubTab, setAnalyticsSubTab] = useState("personal"); // "personal", "group", "overall"
 
   // Group Invitations & Editing States
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -132,6 +157,7 @@ export default function Dashboard() {
 
     fetchUserProfile();
     fetchUserGroups();
+    fetchPersonalExpenses();
     fetchAnalyticsData();
     fetchPendingInvites();
   }, [navigate]);
@@ -146,9 +172,100 @@ export default function Dashboard() {
           currency: res.data.currency || "INR",
           bio: res.data.bio || ""
         });
+        if (res.data.monthlyBudget) {
+          setMonthlyBudget(res.data.monthlyBudget);
+          setTempBudgetInput(res.data.monthlyBudget.toString());
+        }
       }
     } catch (error) {
       console.log("Error loading profile:", error);
+    }
+  };
+
+  const handleSaveBudget = async () => {
+    const num = Number(tempBudgetInput);
+    if (!num || num <= 0) return;
+    try {
+      await updateProfile({ monthlyBudget: num });
+      setMonthlyBudget(num);
+      setIsEditingBudget(false);
+      setStatusMessage("Monthly budget limit updated successfully! 🎯");
+      setTimeout(() => setStatusMessage(""), 3000);
+    } catch (err) {
+      console.log("Error saving budget", err);
+    }
+  };
+
+  const handleSendAiChat = async (promptText = null) => {
+    const textToSend = promptText || aiMessageInput;
+    if (!textToSend || !textToSend.trim()) return;
+
+    const userMsg = { sender: "user", text: textToSend };
+    setAiChatHistory((prev) => [...prev, userMsg]);
+    if (!promptText) setAiMessageInput("");
+    setAiChatLoading(true);
+
+    try {
+      const res = await sendAiMessage(textToSend, activeGroup?._id || null);
+      const aiReply = res.data?.response || res.data?.message || "AI was unable to respond.";
+      setAiChatHistory((prev) => [...prev, { sender: "ai", text: aiReply }]);
+    } catch (err) {
+      setAiChatHistory((prev) => [
+        ...prev,
+        { sender: "ai", text: "Sorry, I had trouble connecting to the server. Please try again!" }
+      ]);
+    } finally {
+      setAiChatLoading(false);
+    }
+  };
+
+  const fetchPersonalExpenses = async () => {
+    try {
+      const res = await getPersonalExpenses();
+      setPersonalExpenses(res.data || []);
+    } catch (error) {
+      console.log("Error fetching personal expenses:", error);
+    }
+  };
+
+  const handleAddPersonalExpenseSubmit = async (e) => {
+    e.preventDefault();
+    if (!personalTitle || !personalAmount) return;
+
+    setPersonalLoading(true);
+    setStatusMessage("");
+    try {
+      await addPersonalExpense({
+        title: personalTitle,
+        amount: Number(personalAmount),
+        category: personalCategory
+      });
+
+      setPersonalTitle("");
+      setPersonalAmount("");
+      setPersonalCategory("Other");
+      setStatusMessage("Personal expense logged successfully! 💰");
+
+      fetchPersonalExpenses();
+      fetchAnalyticsData();
+      setTimeout(() => setStatusMessage(""), 3000);
+    } catch (error) {
+      setStatusMessage(error.response?.data?.error || "Failed to add personal expense.");
+    } finally {
+      setPersonalLoading(false);
+    }
+  };
+
+  const handleDeletePersonalExpense = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this personal expense?")) return;
+    try {
+      await deleteExpense(id);
+      setStatusMessage("Expense deleted! 🗑️");
+      fetchPersonalExpenses();
+      fetchAnalyticsData();
+      setTimeout(() => setStatusMessage(""), 3000);
+    } catch (error) {
+      setStatusMessage(error.response?.data?.error || "Failed to delete expense.");
     }
   };
 
@@ -531,7 +648,13 @@ export default function Dashboard() {
       }
 
       if (members.length === 0) {
-        members.push("650d1a498b3f1c001f3eef4a", "650d1a498b3f1c001f3eef4b");
+        if (profile?._id) {
+          members.push(profile._id);
+        } else {
+          setStatusMessage("No members found in group.");
+          setExpLoading(false);
+          return;
+        }
       }
 
       await addExpense({
@@ -634,17 +757,25 @@ export default function Dashboard() {
     }
   };
 
-  const autofillFromOcr = (totalAmount, itemsText) => {
-    const finalAmount = reconciliationData?.finalTotal || totalAmount;
-    setExpAmount(finalAmount);
-    setExpTitle(itemsText || "Scanned Receipt Expense");
-    // Auto-select the active group if no group is currently selected
-    if (!expGroup && activeGroup) {
-      setExpGroup(activeGroup._id);
-    } else if (!expGroup && groups.length > 0) {
-      setExpGroup(groups[0]._id);
+  const autofillFromOcr = (totalAmount, itemsText, targetType = "group") => {
+    const rawAmount = reconciliationData?.finalTotal || totalAmount;
+    const finalAmount = Math.round((Number(rawAmount) || 0) * 100) / 100;
+    const titleText = itemsText || "Scanned Receipt Expense";
+
+    if (targetType === "personal") {
+      setPersonalAmount(finalAmount.toString());
+      setPersonalTitle(titleText);
+      setActiveTab("personal");
+    } else {
+      setExpAmount(finalAmount.toString());
+      setExpTitle(titleText);
+      if (!expGroup && activeGroup) {
+        setExpGroup(activeGroup._id);
+      } else if (!expGroup && groups.length > 0) {
+        setExpGroup(groups[0]._id);
+      }
+      setActiveTab("add-expense");
     }
-    setActiveTab("add-expense");
   };
 
   // 🔔 Notification Handlers
@@ -789,6 +920,238 @@ export default function Dashboard() {
           <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-extrabold rounded-2xl flex items-center gap-2 animate-fadeIn shadow-sm">
             <Check className="h-4.5 w-4.5 shrink-0" />
             {statusMessage}
+          </div>
+        )}
+
+        {/* TAB 0: PERSONAL EXPENSES TRACKER */}
+        {activeTab === "personal" && (
+          <div className="flex flex-col gap-6 animate-fadeIn">
+            {/* Top row: Add Personal Expense Form + Summary Card */}
+            <div className="grid gap-6 lg:grid-cols-12 items-start">
+              {/* Add Personal Expense Form */}
+              <div className="lg:col-span-7 rounded-2xl border border-gray-100 bg-white p-5 md:p-6 shadow-sm flex flex-col gap-4">
+                <div className="flex items-center gap-2.5 border-b border-gray-100 pb-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#27187E]/10 text-[#27187E] font-black text-sm">
+                    💳
+                  </span>
+                  <div>
+                    <h3 className="m-0 text-base font-black text-[#27187E]">Log Personal Expense</h3>
+                    <p className="m-0 text-[10px] text-gray-400 font-bold uppercase tracking-wider">Track your personal daily spending</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddPersonalExpenseSubmit} className="flex flex-col gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="block mb-1.5 text-xs font-extrabold uppercase tracking-wider text-gray-400" htmlFor="personal-exp-title">
+                        Description / Item
+                      </label>
+                      <input
+                        id="personal-exp-title"
+                        type="text"
+                        placeholder="e.g. Groceries, Coffee, Rent"
+                        value={personalTitle}
+                        onChange={(e) => setPersonalTitle(e.target.value)}
+                        required
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-[#F8F9FA] px-3.5 text-xs font-medium text-[#27187E] outline-none focus:border-[#758BFD] focus:bg-white transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block mb-1.5 text-xs font-extrabold uppercase tracking-wider text-gray-400" htmlFor="personal-exp-amount">
+                        Amount Paid ({details.currency === "INR" ? "₹" : "$"})
+                      </label>
+                      <input
+                        id="personal-exp-amount"
+                        type="number"
+                        placeholder="0.00"
+                        value={personalAmount}
+                        onChange={(e) => setPersonalAmount(e.target.value)}
+                        required
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-[#F8F9FA] px-3.5 text-xs font-black text-[#27187E] outline-none focus:border-[#758BFD] focus:bg-white transition"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2 items-end">
+                    <div>
+                      <label className="block mb-1.5 text-xs font-extrabold uppercase tracking-wider text-gray-400" htmlFor="personal-exp-category">
+                        Category
+                      </label>
+                      <select
+                        id="personal-exp-category"
+                        value={personalCategory}
+                        onChange={(e) => setPersonalCategory(e.target.value)}
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-[#F8F9FA] px-3.5 text-xs font-bold text-[#27187E] outline-none focus:border-[#758BFD] focus:bg-white transition cursor-pointer"
+                      >
+                        <option value="Food">🍔 Food & Dining</option>
+                        <option value="Transport">🚗 Transport & Fuel</option>
+                        <option value="Entertainment">🎬 Entertainment</option>
+                        <option value="Shopping">🛍️ Shopping & Groceries</option>
+                        <option value="Other">📦 Other / Misc</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={personalLoading}
+                      className="h-11 w-full rounded-xl border-0 bg-[#27187E] text-xs font-extrabold text-white cursor-pointer hover:bg-[#1F1368] transition shadow-sm active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {personalLoading ? "Saving..." : "+ Log Personal Expense"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Personal Expenditure & Monthly Spend Limit Card */}
+              <div className="lg:col-span-5 rounded-2xl border border-gray-100 bg-white p-5 md:p-6 shadow-sm flex flex-col justify-between min-h-[240px]">
+                {(() => {
+                  const totalSpent = personalExpenses.reduce((sum, e) => sum + e.amount, 0);
+                  const percentageUsed = Math.min(100, Math.round((totalSpent / Math.max(1, monthlyBudget)) * 100));
+                  const isOverLimit = totalSpent > monthlyBudget;
+                  const isNearLimit = percentageUsed >= 80 && !isOverLimit;
+
+                  return (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Monthly Spend Limit</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingBudget(!isEditingBudget)}
+                          className="text-[11px] font-black text-[#758BFD] hover:underline bg-transparent border-0 cursor-pointer"
+                        >
+                          {isEditingBudget ? "Cancel" : "✏️ Edit Limit"}
+                        </button>
+                      </div>
+
+                      {isEditingBudget ? (
+                        <div className="flex items-center gap-2 bg-[#F8F9FA] p-2.5 rounded-xl border border-gray-200">
+                          <span className="text-xs font-black text-[#27187E]">₹</span>
+                          <input
+                            type="number"
+                            value={tempBudgetInput}
+                            onChange={(e) => setTempBudgetInput(e.target.value)}
+                            placeholder="Enter monthly limit"
+                            className="h-8 w-full rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-black text-[#27187E] outline-none focus:border-[#758BFD]"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveBudget}
+                            className="h-8 px-3 rounded-lg border-0 bg-[#27187E] text-xs font-bold text-white cursor-pointer hover:bg-[#1F1368] shrink-0"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-2xl font-black text-[#27187E] tracking-tight">
+                              ₹{totalSpent.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-xs font-bold text-gray-400">
+                              Limit: ₹{monthlyBudget.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div className="w-full bg-gray-100 rounded-full h-3 mt-1 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isOverLimit
+                                  ? "bg-gradient-to-r from-rose-500 to-red-600"
+                                  : isNearLimit
+                                  ? "bg-gradient-to-r from-amber-400 to-orange-500"
+                                  : "bg-gradient-to-r from-[#6366F1] to-[#758BFD]"
+                              }`}
+                              style={{ width: `${percentageUsed}%` }}
+                            />
+                          </div>
+
+                          {/* Status Badge */}
+                          <div className="flex items-center justify-between mt-1">
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                              isOverLimit
+                                ? "bg-rose-100 text-rose-800"
+                                : isNearLimit
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}>
+                              {isOverLimit ? "🚨 Budget Exceeded!" : isNearLimit ? "⚠️ 80%+ Limit Reached" : "✓ Within Healthy Budget"}
+                            </span>
+                            <span className="text-[10px] font-bold text-gray-400">{percentageUsed}% used</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={() => setActiveTab("ocr-scan")}
+                    className="flex-1 h-10 rounded-xl border border-[#758BFD]/30 bg-indigo-50/50 hover:bg-indigo-50 text-[#27187E] text-xs font-extrabold cursor-pointer transition flex items-center justify-center gap-1.5"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Scan Receipt Bill
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("ai-advisor")}
+                    className="flex-1 h-10 rounded-xl border-0 bg-[#27187E] text-white text-xs font-extrabold cursor-pointer hover:bg-[#1F1368] transition flex items-center justify-center gap-1.5"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Ask AI Advisor
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Personal Expenses List */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 md:p-6 shadow-sm flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <h3 className="m-0 text-sm font-black text-[#27187E] uppercase tracking-wider">Personal Expenses Feed</h3>
+                <span className="text-[10px] bg-indigo-50 text-[#27187E] px-2.5 py-1 rounded-full font-bold">
+                  {personalExpenses.length} logged
+                </span>
+              </div>
+
+              {personalExpenses.length === 0 ? (
+                <div className="text-center py-10 bg-[#F8F9FA] rounded-xl border border-dashed border-gray-200 flex flex-col items-center gap-2">
+                  <span className="text-3xl">📝</span>
+                  <p className="text-xs font-bold text-gray-400 m-0">No personal expenses logged yet. Add your first expense above or scan a receipt!</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-1">
+                  {personalExpenses.map((exp) => (
+                    <div key={exp._id} className="flex items-center justify-between gap-3 p-3.5 bg-[#F8F9FA] rounded-xl border border-gray-100 transition hover:border-gray-200">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-9 w-9 rounded-xl bg-[#27187E]/10 flex items-center justify-center text-[#27187E] font-black text-sm shrink-0">
+                          {exp.category === "Food" ? "🍔" : exp.category === "Transport" ? "🚗" : exp.category === "Entertainment" ? "🎬" : exp.category === "Shopping" ? "🛍️" : "📦"}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm font-extrabold text-[#27187E] truncate">{exp.title}</span>
+                          <span className="text-[10px] text-gray-400 font-bold">
+                            {exp.category} • {new Date(exp.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-base font-black text-[#27187E]">
+                          ₹{exp.amount.toFixed(2)}
+                        </span>
+                        <button
+                          onClick={() => handleDeletePersonalExpense(exp._id)}
+                          className="h-8 w-8 rounded-lg border-0 bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer flex items-center justify-center font-bold text-xs"
+                          title="Delete expense"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1013,10 +1376,95 @@ export default function Dashboard() {
                     </div>
                   </div>
 
+                  {/* Inline Add Group Expense Form */}
+                  <div className="rounded-2xl border border-indigo-100 bg-[#F8F9FA] p-4 md:p-5 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#27187E] text-white text-xs font-black">
+                          💳
+                        </span>
+                        <h3 className="m-0 text-xs font-black uppercase tracking-wider text-[#27187E]">Add Expense to {activeGroup.name}</h3>
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-400">Step 2: Log & Split</span>
+                    </div>
+
+                    <form onSubmit={handleAddExpenseSubmit} className="flex flex-col gap-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block mb-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400" htmlFor="exp-title-inline">
+                            Description / Item
+                          </label>
+                          <input
+                            id="exp-title-inline"
+                            type="text"
+                            placeholder="e.g. Dinner, Fuel, Hotel"
+                            value={expTitle}
+                            onChange={(e) => {
+                              setExpTitle(e.target.value);
+                              if (!expGroup && activeGroup) setExpGroup(activeGroup._id);
+                            }}
+                            required
+                            className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-xs font-medium text-[#27187E] outline-none focus:border-[#758BFD] transition"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block mb-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-400" htmlFor="exp-amount-inline">
+                            Total Amount Paid ({details.currency === "INR" ? "₹" : "$"})
+                          </label>
+                          <input
+                            id="exp-amount-inline"
+                            type="number"
+                            placeholder="0.00"
+                            value={expAmount}
+                            onChange={(e) => {
+                              setExpAmount(e.target.value);
+                              if (!expGroup && activeGroup) setExpGroup(activeGroup._id);
+                            }}
+                            required
+                            className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-xs font-black text-[#27187E] outline-none focus:border-[#758BFD] transition"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <span className="text-[10px] font-extrabold uppercase text-gray-400 shrink-0">Split:</span>
+                          <button
+                            type="button"
+                            onClick={() => setExpSplitType("equal")}
+                            className={`h-8 px-3 rounded-lg text-[11px] font-bold border-0 cursor-pointer transition ${
+                              expSplitType === "equal" ? "bg-[#27187E] text-white" : "bg-white text-gray-500 border border-gray-200"
+                            }`}
+                          >
+                            Equally (1/N)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExpSplitType("unequal")}
+                            className={`h-8 px-3 rounded-lg text-[11px] font-bold border-0 cursor-pointer transition ${
+                              expSplitType === "unequal" ? "bg-[#27187E] text-white" : "bg-white text-gray-500 border border-gray-200"
+                            }`}
+                          >
+                            Unequally (%)
+                          </button>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={expLoading}
+                          className="h-10 px-5 rounded-xl border-0 bg-[#27187E] hover:bg-[#1F1368] text-xs font-extrabold text-white cursor-pointer transition shadow-sm w-full sm:w-auto disabled:opacity-50"
+                        >
+                          {expLoading ? "Logging..." : "+ Add Expense & Calculate Splits"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
                   {/* Expense Feed */}
                   <div className="rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm flex flex-col gap-3">
                     <div className="flex justify-between items-center">
-                      <h3 className="m-0 text-xs font-black uppercase tracking-wider text-gray-400">Recent Expenses</h3>
+                      <h3 className="m-0 text-xs font-black uppercase tracking-wider text-gray-400">Recent Group Expenses</h3>
                       <span className="text-[10px] bg-indigo-50 text-[#27187E] px-2 py-0.5 rounded-full font-bold">
                         {expenses.length} total
                       </span>
@@ -1422,16 +1870,30 @@ export default function Dashboard() {
                                 }`}>
                                   {isMatch ? "Verified ✓" : `Diff: ₹${diff.toFixed(2)}`}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => autofillFromOcr(
-                                    ocrGrandTotal > 0 ? ocrGrandTotal : sum,
-                                    editableOcrItems.map(i => i.item).join(", ")
-                                  )}
-                                  className="h-9 px-4 rounded-lg border-0 bg-[#27187E] text-xs font-extrabold text-white cursor-pointer hover:bg-[#1F1368] transition active:scale-[0.98] w-full sm:w-auto"
-                                >
-                                  Autofill Add Expense
-                                </button>
+                                <div className="flex gap-2 w-full sm:w-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => autofillFromOcr(
+                                      ocrGrandTotal > 0 ? ocrGrandTotal : sum,
+                                      editableOcrItems.map(i => i.item).join(", "),
+                                      "personal"
+                                    )}
+                                    className="h-9 px-3 rounded-lg border border-[#27187E] bg-white text-xs font-extrabold text-[#27187E] hover:bg-indigo-50 transition active:scale-[0.98] flex-1 sm:flex-initial"
+                                  >
+                                    + Personal Expense
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => autofillFromOcr(
+                                      ocrGrandTotal > 0 ? ocrGrandTotal : sum,
+                                      editableOcrItems.map(i => i.item).join(", "),
+                                      "group"
+                                    )}
+                                    className="h-9 px-3 rounded-lg border-0 bg-[#27187E] text-xs font-extrabold text-white cursor-pointer hover:bg-[#1F1368] transition active:scale-[0.98] flex-1 sm:flex-initial"
+                                  >
+                                    + Group Expense
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1463,56 +1925,148 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* TAB 4: AI SMART EXPENSE ANALYTICS */}
+          {/* TAB 4: AI SMART EXPENSE ANALYTICS — SEPARATED PERSONAL & GROUP ANALYTICS */}
           {activeTab === "analytics" && (
-            <div className="flex flex-col gap-6 animate-fadeIn">
+            <div className="flex flex-col gap-10 animate-fadeIn">
 
-              {/* Analytics Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span style={{
-                    display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    width: 40, height: 40, borderRadius: 12,
-                    background: "linear-gradient(135deg, #6366F1, #EC4899)",
-                    boxShadow: "0 4px 14px rgba(99,102,241,0.25)"
-                  }}>
-                    <FaChartLine className="text-white text-lg" />
-                  </span>
-                  <div>
-                    <h2 className="m-0 text-lg font-black text-[#27187E]">AI Smart Analytics</h2>
-                    <p className="m-0 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                      Real-time financial intelligence
-                    </p>
-                  </div>
+              {/* Header */}
+              <div className="flex items-center gap-3 border-b border-gray-200/80 pb-4">
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 44, height: 44, borderRadius: 14,
+                  background: "linear-gradient(135deg, #6366F1, #EC4899)",
+                  boxShadow: "0 4px 14px rgba(99,102,241,0.25)"
+                }}>
+                  <FaChartLine className="text-white text-xl" />
+                </span>
+                <div>
+                  <h2 className="m-0 text-xl font-black text-[#27187E]">AI Smart Analytics</h2>
+                  <p className="m-0 text-xs font-bold text-gray-400 uppercase tracking-widest">
+                    Separated Intelligence: Personal Expenditure vs Group & Trip Splits
+                  </p>
                 </div>
               </div>
 
-              {/* Stats Cards Row */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <StatCard
-                  title="Total Group Expenses"
-                  value={totalExpensesLogged}
-                  icon={FaMoneyBillWave}
-                  colorClass="bg-indigo-50 text-[#27187E] border border-indigo-100"
-                />
-                <StatCard
-                  title="Active Expense Groups"
-                  value={groupsCount}
-                  icon={FaUsers}
-                  colorClass="bg-emerald-50 text-emerald-700 border border-emerald-100"
-                />
-                <StatCard
-                  title="Optimal Settlements"
-                  value={calculatedPendingBalance}
-                  icon={FaWallet}
-                  colorClass="bg-amber-50 text-amber-700 border border-amber-100"
-                />
+              {/* ========================================================================= */}
+              {/* SECTION 1: 👤 PERSONAL EXPENSES ANALYTICS PANEL */}
+              {/* ========================================================================= */}
+              <div className="rounded-3xl border border-indigo-100 bg-white p-6 md:p-8 shadow-sm flex flex-col gap-6 relative overflow-hidden">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-[#27187E] text-base font-black">
+                      👤
+                    </span>
+                    <h3 className="m-0 text-base font-black text-[#27187E]">Personal Expenditure Analytics</h3>
+                  </div>
+                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-indigo-50 text-[#27187E]">
+                    Isolated Personal Data
+                  </span>
+                </div>
+
+                {(() => {
+                  const pData = analyticsData?.personalAnalytics || analyticsData?.analytics?.personalAnalytics;
+                  const pTotal = pData?.totalSpent || personalExpenses.reduce((s, e) => s + e.amount, 0);
+                  const pCats = pData?.categoryTotals || {};
+                  const pMonthly = pData?.monthlyData || [];
+
+                  return (
+                    <div className="flex flex-col gap-6">
+                      {/* Personal Stat Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <StatCard
+                          title="Total Personal Expenditure"
+                          value={pTotal}
+                          icon={FaMoneyBillWave}
+                          colorClass="bg-indigo-50 text-[#27187E] border border-indigo-100"
+                        />
+                        <StatCard
+                          title="Personal Entries Logged"
+                          value={personalExpenses.length}
+                          icon={FaMoneyBillWave}
+                          colorClass="bg-indigo-50/60 text-[#27187E] border border-indigo-100"
+                        />
+                        <StatCard
+                          title="Monthly Spend Budget Limit"
+                          value={monthlyBudget}
+                          icon={FaWallet}
+                          colorClass="bg-amber-50 text-amber-800 border border-amber-100"
+                        />
+                      </div>
+
+                      {/* Personal Recharts Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <PersonalExpenseChart data={pCats} title="Personal Category Breakdown" />
+                        <ExpensePieChart data={pCats} title="Personal Expenditure Share" />
+                      </div>
+
+                      {/* Personal Monthly Timeline */}
+                      <div className="w-full">
+                        <MonthlyChart data={pMonthly} title="Personal Monthly Spending Timeline" />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
-              {/* Recharts Graphical Visuals Row */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <ExpensePieChart data={analyticsData?.analytics?.categoryTotals} />
-                <MonthlyChart data={analyticsData?.analytics?.categoryTotals} />
+              {/* ========================================================================= */}
+              {/* SECTION 2: 👥 GROUP & TRIP SPLITS ANALYTICS PANEL */}
+              {/* ========================================================================= */}
+              <div className="rounded-3xl border border-emerald-100 bg-white p-6 md:p-8 shadow-sm flex flex-col gap-6 relative overflow-hidden">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 text-base font-black">
+                      👥
+                    </span>
+                    <h3 className="m-0 text-base font-black text-emerald-950">Trip & Group Splits Analytics</h3>
+                  </div>
+                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800">
+                    Isolated Group Data
+                  </span>
+                </div>
+
+                {(() => {
+                  const gData = analyticsData?.groupAnalytics || analyticsData?.analytics?.groupAnalytics;
+                  const gTotal = gData?.totalSpent || 0;
+                  const gCats = gData?.categoryTotals || {};
+                  const gMonthly = gData?.monthlyData || [];
+
+                  return (
+                    <div className="flex flex-col gap-6">
+                      {/* Group Stat Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <StatCard
+                          title="Total Group Share Spent"
+                          value={gTotal}
+                          icon={FaUsers}
+                          colorClass="bg-emerald-50 text-emerald-800 border border-emerald-100"
+                        />
+                        <StatCard
+                          title="Active Trip & Expense Groups"
+                          value={groupsCount}
+                          icon={FaUsers}
+                          colorClass="bg-emerald-50/60 text-emerald-800 border border-emerald-100"
+                        />
+                        <StatCard
+                          title="Pending Settlements Balance"
+                          value={calculatedPendingBalance}
+                          icon={FaWallet}
+                          colorClass="bg-amber-50 text-amber-800 border border-amber-100"
+                        />
+                      </div>
+
+                      {/* Group Recharts Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <PersonalExpenseChart data={gCats} title="Group Splits Category Breakdown" />
+                        <ExpensePieChart data={gCats} title="Group Splits Share" />
+                      </div>
+
+                      {/* Group Monthly Timeline */}
+                      <div className="w-full">
+                        <MonthlyChart data={gMonthly} title="Group Splits Monthly Timeline" />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* AI Smart recommendation alerts */}
@@ -1521,19 +2075,106 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* TAB 5: NOTIFICATIONS & REMINDERS */}
-          {activeTab === "notifications" && (
-            <NotificationPanel
-              groups={groups}
-              activeGroup={activeGroup}
-              groupBalances={groupBalances}
-              getMemberName={getMemberName}
-              profile={profile}
-              onSendReminder={handleSendReminder}
-              onSendBulkReminders={handleSendBulkReminders}
-              notifLoading={notifLoading}
-              notifMessage={notifMessage}
-            />
+          {/* TAB: AI FINANCIAL ADVISOR CHAT ASSISTANT */}
+          {activeTab === "ai-advisor" && (
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 md:p-8 shadow-sm flex flex-col gap-6 animate-fadeIn min-h-[550px] justify-between">
+              
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-[#6366F1] to-[#EC4899] text-white shadow-md">
+                    <Sparkles className="h-5 w-5 animate-pulse" />
+                  </span>
+                  <div>
+                    <h3 className="m-0 text-base font-black text-[#27187E]">SplitEase AI Financial Assistant</h3>
+                    <p className="m-0 text-[10px] text-gray-400 font-bold uppercase tracking-wider">Smart expense breakdown, budget tips & settlement generator</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick AI Prompt Chips */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <span className="text-[10px] font-black uppercase text-gray-400 shrink-0">Quick Prompts:</span>
+                {[
+                  "How to reduce food expenses?",
+                  "Who owes money in group?",
+                  "Draft polite payment reminder",
+                  "Analyze my spending habits"
+                ].map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSendAiChat(chip)}
+                    className="h-7 px-3 rounded-full border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 text-[#27187E] text-[11px] font-bold shrink-0 transition cursor-pointer"
+                  >
+                    ✨ {chip}
+                  </button>
+                ))}
+              </div>
+
+              {/* Chat History Box */}
+              <div className="flex-1 bg-[#F8F9FA] rounded-2xl border border-gray-100 p-4 max-h-[380px] overflow-y-auto flex flex-col gap-3">
+                {aiChatHistory.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex items-start gap-2.5 max-w-[85%] ${
+                      msg.sender === "user" ? "self-end flex-row-reverse" : "self-start"
+                    }`}
+                  >
+                    <div
+                      className={`h-7 w-7 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${
+                        msg.sender === "user"
+                          ? "bg-[#27187E] text-white"
+                          : "bg-gradient-to-tr from-[#6366F1] to-[#EC4899] text-white"
+                      }`}
+                    >
+                      {msg.sender === "user" ? "👤" : "🤖"}
+                    </div>
+                    <div
+                      className={`p-3.5 rounded-2xl text-xs font-medium leading-relaxed whitespace-pre-wrap ${
+                        msg.sender === "user"
+                          ? "bg-[#27187E] text-white rounded-tr-none"
+                          : "bg-white border border-gray-200 text-[#27187E] rounded-tl-none shadow-sm"
+                      }`}
+                    >
+                      {msg.text}
+                    </div>
+                  </div>
+                ))}
+                {aiChatLoading && (
+                  <div className="self-start flex items-center gap-2 text-xs font-bold text-gray-400 p-2">
+                    <Sparkles className="h-4 w-4 animate-spin text-[#758BFD]" />
+                    <span>SplitEase AI is thinking...</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Input Form */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSendAiChat();
+                }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  placeholder="Ask AI anything about your expenses or budget..."
+                  value={aiMessageInput}
+                  onChange={(e) => setAiMessageInput(e.target.value)}
+                  disabled={aiChatLoading}
+                  className="h-12 flex-1 rounded-xl border border-gray-200 bg-white px-4 text-xs font-medium text-[#27187E] outline-none focus:border-[#758BFD] transition"
+                />
+                <button
+                  type="submit"
+                  disabled={aiChatLoading || !aiMessageInput.trim()}
+                  className="h-12 px-6 rounded-xl border-0 bg-[#27187E] hover:bg-[#1F1368] text-xs font-black text-white cursor-pointer transition shadow-md disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </form>
+
+            </div>
           )}
 
           

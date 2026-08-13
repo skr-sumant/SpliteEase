@@ -101,3 +101,71 @@ export const getExpensesByGroup = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// 💰 Add Personal Expense (no group, no splits)
+export const addPersonalExpense = async (req, res) => {
+  try {
+    const { title, amount, category } = req.body;
+    const numericAmount = safeRound(Number(amount));
+
+    if (!title || !numericAmount || numericAmount <= 0) {
+      return res.status(400).json({
+        error: "Title and a positive amount are required."
+      });
+    }
+
+    const finalCategory = category || classifyExpense(title);
+
+    const expense = await Expense.create({
+      title,
+      amount: numericAmount,
+      group: null,
+      isPersonal: true,
+      paidBy: req.user._id,
+      participants: [req.user._id],
+      splitType: "equal",
+      splits: [{ user: req.user._id, amount: numericAmount }],
+      category: finalCategory
+    });
+
+    res.status(201).json(expense);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// 💰 Get Personal Expenses for the logged-in user
+export const getPersonalExpenses = async (req, res) => {
+  try {
+    const expenses = await Expense.find({
+      paidBy: req.user._id,
+      isPersonal: true
+    }).sort({ createdAt: -1 });
+
+    res.json(expenses);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// 🗑️ Delete an Expense
+export const deleteExpense = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const expense = await Expense.findById(id);
+
+    if (!expense) {
+      return res.status(404).json({ error: "Expense not found." });
+    }
+
+    // Only the payer can delete
+    if (expense.paidBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: "Only the person who paid can delete this expense." });
+    }
+
+    await Expense.findByIdAndDelete(id);
+    res.json({ success: true, message: "Expense deleted successfully." });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

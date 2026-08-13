@@ -11,12 +11,14 @@ import {
     updateProfile,
     getProfile,
     aiChat,
-    deleteAccount
+    deleteAccount,
+    firebaseAuthSync
 } from "../controllers/authControllers.js";
 import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+router.post("/firebase-sync", firebaseAuthSync);
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.get("/google", startGoogleOAuth);

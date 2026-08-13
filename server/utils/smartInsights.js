@@ -23,10 +23,23 @@ export const generateInsights = (analytics) => {
     insights.push("⚠ High shopping expenses! Double check if you really need those purchases.");
   }
 
+  // Monthly trend insight
+  if (analytics.monthlyData && analytics.monthlyData.length >= 2) {
+    const recent = analytics.monthlyData[analytics.monthlyData.length - 1];
+    const previous = analytics.monthlyData[analytics.monthlyData.length - 2];
+    if (recent.total > previous.total * 1.3) {
+      const increase = Math.round(((recent.total - previous.total) / previous.total) * 100);
+      insights.push(`🚨 Spending increased by ${increase}% compared to last month. Watch your budget!`);
+    } else if (recent.total < previous.total * 0.8) {
+      const decrease = Math.round(((previous.total - recent.total) / previous.total) * 100);
+      insights.push(`🔥 Great job! You reduced spending by ${decrease}% compared to last month.`);
+    }
+  }
+
   if (analytics.totalSpent > 15000) {
     insights.push("🚨 Critical: Monthly overspending detected across multiple categories.");
   } else if (analytics.totalSpent === 0) {
-    insights.push("🎉 You have logged no expenses this month. Excellent budget control!");
+    insights.push("🎉 You have logged no expenses yet. Start tracking to get AI insights!");
   } else {
     insights.push("✨ Great job! Your overall budget is currently within normal limits.");
   }

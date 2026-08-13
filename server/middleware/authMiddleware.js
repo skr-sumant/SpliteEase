@@ -55,7 +55,7 @@ const protect = async (req, res, next) => {
     if (!user) {
       // Use .lean() for faster read-only query and only select needed fields
       user = await User.findById(decoded.userId)
-        .select("_id name email phone currency bio avatar")
+        .select("_id name email phone currency bio avatar monthlyBudget")
         .lean();
 
       if (!user) {

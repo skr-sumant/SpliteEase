@@ -80,19 +80,24 @@ export const registerUser = async(req,res)=>{
     try{
         const {name,email,password} = req.body;
 
-        // Enforce password constraints: min 8 chars, 1 num, 1 upper, 1 lower, 1 special char
-        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
-        if (!passwordRegex.test(password)) {
+        if (!email || !password || !name) {
             return res.status(400).json({
-                message: "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&#)."
+                message: "Name, email, and password are required."
             });
         }
 
-        const userExists = await User.findOne({email});
+        // Require at least 6 characters for password
+        if (password.length < 6) {
+            return res.status(400).json({
+                message: "Password must be at least 6 characters long."
+            });
+        }
+
+        const userExists = await User.findOne({email: email.toLowerCase().trim()});
 
         if(userExists){
             return res.status(400).json({
-                message: "User already exists"
+                message: "User with this email already exists"
             });
         }
 
@@ -100,7 +105,7 @@ export const registerUser = async(req,res)=>{
 
         const user = await User.create({
             name,
-            email,
+            email: email.toLowerCase().trim(),
             password: hashPassword,
             authProvider: "local"
         });
@@ -113,7 +118,9 @@ export const registerUser = async(req,res)=>{
             token
         });
     }catch(error){
+        console.error("Register Error:", error);
         res.status(500).json({
+            message: error.message,
             error: error.message
         });
     }
@@ -123,11 +130,17 @@ export const loginUser = async(req,res)=>{
     try{
         const{email,password} = req.body;
 
-        const user = await User.findOne({email});
+        if (!email || !password) {
+            return res.status(400).json({
+                message: "Email and password are required"
+            });
+        }
+
+        const user = await User.findOne({email: email.toLowerCase().trim()});
 
         if(!user){
             return res.status(400).json({
-                message: "User not found"
+                message: "User not found. Please register first."
             });
         }
 
@@ -140,7 +153,7 @@ export const loginUser = async(req,res)=>{
         const isMatch  = await bcrypt.compare(password, user.password);
         if(!isMatch){
             return res.status(400).json({
-                message: "Invalid Credentials"
+                message: "Invalid email or password"
             });
         }
 
@@ -152,10 +165,63 @@ export const loginUser = async(req,res)=>{
         });
     }
     catch(error){
+        console.error("Login Error:", error);
         res.status(500).json({
+            message: error.message,
             error: error.message
         });
     }
+};
+
+// 🔥 Firebase Social Auth Sync (Google & GitHub)
+export const firebaseAuthSync = async (req, res) => {
+  try {
+    const { email, name, provider, providerId, avatar } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required for Firebase auth sync" });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    let user = await User.findOne({ email: cleanEmail });
+
+    if (user) {
+      // Update provider details if missing
+      user.authProvider = user.authProvider || provider || "firebase";
+      user.providerId = user.providerId || providerId;
+      if (avatar && !user.avatar) user.avatar = avatar;
+      await user.save();
+    } else {
+      // Create new user in MongoDB
+      user = await User.create({
+        name: name || cleanEmail.split("@")[0],
+        email: cleanEmail,
+        authProvider: provider || "firebase",
+        providerId: providerId || "fb_" + Date.now(),
+        avatar: avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`
+      });
+    }
+
+    const token = createToken(user._id);
+
+    res.status(200).json({
+      message: "Firebase auth synced successfully",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        currency: user.currency || "INR"
+      }
+    });
+  } catch (error) {
+    console.error("Firebase Auth Sync Error:", error);
+    res.status(500).json({
+      message: error.message,
+      error: error.message
+    });
+  }
 };
 
 export const startGoogleOAuth = (req, res) => {
@@ -370,7 +436,7 @@ export const resetPassword = async (req, res) => {
 // 🔑 Update User Profile
 export const updateProfile = async (req, res) => {
     try {
-        const { name, phone, currency, bio, avatar } = req.body;
+        const { name, phone, currency, bio, avatar, monthlyBudget } = req.body;
         const user = await User.findById(req.user._id);
 
         if (!user) {
@@ -382,6 +448,7 @@ export const updateProfile = async (req, res) => {
         if (currency) user.currency = currency;
         if (bio) user.bio = bio;
         if (avatar) user.avatar = avatar; // Base64 avatar or Image URL
+        if (monthlyBudget !== undefined) user.monthlyBudget = Number(monthlyBudget) || 10000;
 
         await user.save();
 
@@ -394,7 +461,8 @@ export const updateProfile = async (req, res) => {
                 phone: user.phone,
                 currency: user.currency,
                 bio: user.bio,
-                avatar: user.avatar
+                avatar: user.avatar,
+                monthlyBudget: user.monthlyBudget
             }
         });
     } catch (error) {

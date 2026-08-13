@@ -14,13 +14,37 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 
 dotenv.config();
 
+if (!process.env.CLIENT_URL) {
+  console.warn("⚠️ WARNING: CLIENT_URL environment variable is missing! CORS origin will not be restricted, which can fail or allow unauthorized origins.");
+}
+
 const app = express();
 
 const startServer = async () => {
   const dbStatus = await connectDB();
 
+  const clientOrigins = [
+    "https://spliteeasee.vercel.app",
+    "https://spliteease.vercel.app",
+    "http://localhost:5173"
+  ];
+
+  if (process.env.CLIENT_URL) {
+    const cleanUrl = process.env.CLIENT_URL.replace(/\/$/, "");
+    if (!clientOrigins.includes(cleanUrl)) {
+      clientOrigins.push(cleanUrl);
+    }
+  }
+
   app.use(cors({
-    origin: process.env.CLIENT_URL,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (clientOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     credentials: true
   }));
   app.use(express.json());

@@ -54,14 +54,7 @@ const cleanText = (text) => {
 };
 
 export default function InsightsCard({ insights }) {
-  const defaultInsights = [
-    "⚠ High food spending this month",
-    "💡 Transport costs increased",
-    "🔥 You saved 20% this week",
-    "✨ Great job! Your overall budget is currently within normal limits."
-  ];
-
-  const list = insights && insights.length > 0 ? insights : defaultInsights;
+  const list = insights && insights.length > 0 ? insights : [];
 
   return (
     <motion.div
@@ -87,50 +80,56 @@ export default function InsightsCard({ insights }) {
         </span>
       </div>
 
-      <div className="flex flex-col gap-3">
-        {list.map((item, index) => {
-          const meta = getInsightMeta(item);
-          const IconComp = meta.icon;
-          return (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 * index }}
-              className="relative p-4 rounded-xl flex items-start gap-3 overflow-hidden transition-all duration-200"
-              style={{
-                background: meta.bgColor,
-                border: `1px solid ${meta.borderColor}`
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateX(4px)";
-                e.currentTarget.style.boxShadow = `0 4px 20px ${meta.borderColor}`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateX(0)";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            >
-              {/* Gradient left bar */}
-              <div
-                className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
-                style={{ background: meta.gradient }}
-              />
-
-              <div
-                className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{ background: meta.gradient }}
+      {list.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          {list.map((item, index) => {
+            const meta = getInsightMeta(item);
+            const IconComp = meta.icon;
+            return (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 * index }}
+                className="relative p-4 rounded-xl flex items-start gap-3 overflow-hidden transition-all duration-200"
+                style={{
+                  background: meta.bgColor,
+                  border: `1px solid ${meta.borderColor}`
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateX(4px)";
+                  e.currentTarget.style.boxShadow = `0 4px 20px ${meta.borderColor}`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateX(0)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
               >
-                <IconComp size={15} color="#fff" strokeWidth={2.5} />
-              </div>
+                {/* Gradient left bar */}
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
+                  style={{ background: meta.gradient }}
+                />
 
-              <p className="m-0 text-[12px] font-bold text-[#27187E] leading-relaxed flex-1">
-                {cleanText(item)}
-              </p>
-            </motion.div>
-          );
-        })}
-      </div>
+                <div
+                  className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={{ background: meta.gradient }}
+                >
+                  <IconComp size={15} color="#fff" strokeWidth={2.5} />
+                </div>
+
+                <p className="m-0 text-[12px] font-bold text-[#27187E] leading-relaxed flex-1">
+                  {cleanText(item)}
+                </p>
+              </motion.div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center py-6">
+          <p className="text-xs font-bold text-gray-400 m-0">No insights available yet. Log some personal or group expenses to generate AI recommendations!</p>
+        </div>
+      )}
     </motion.div>
   );
 }

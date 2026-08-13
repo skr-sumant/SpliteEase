@@ -1,5 +1,9 @@
 import axios from "axios";
 
+if (!import.meta.env.VITE_API_URL) {
+  console.warn("⚠️ VITE_API_URL environment variable is missing! API requests will fall back to relative paths, which may fail on live deployments.");
+}
+
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_URL
 });
@@ -14,6 +18,7 @@ API.interceptors.request.use((req) => {
 });
 
 // Auth APIs
+export const syncFirebaseAuth = (data) => API.post("/auth/firebase-sync", data);
 export const registerUser = (data) => API.post("/auth/register", data);
 export const loginUser = (data) => API.post("/auth/login", data);
 export const getOAuthUrl = (provider) => `${API.defaults.baseURL}/auth/${provider}`;
@@ -68,6 +73,11 @@ export const deleteGroup = (groupId) => API.delete(`/groups/${groupId}`);
 
 // Expense Additional APIs
 export const getExpenses = (groupId) => API.get(`/expenses/group/${groupId}`);
+
+// Personal Expense APIs
+export const addPersonalExpense = (data) => API.post("/expenses/personal", data);
+export const getPersonalExpenses = () => API.get("/expenses/personal");
+export const deleteExpense = (id) => API.delete(`/expenses/${id}`);
 
 // Notification APIs
 export const sendPaymentReminderAPI = (data) => API.post("/notifications/payment-reminder", data);

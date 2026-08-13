@@ -58,17 +58,11 @@ const renderActiveLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent
 };
 
 export default function ExpensePieChart({ data }) {
-  const defaultData = [
-    { name: "Food", value: 4500 },
-    { name: "Transport", value: 2000 },
-    { name: "Entertainment", value: 2000 },
-    { name: "Shopping", value: 1200 },
-    { name: "Other", value: 800 }
-  ];
-
   const chartData = data && Object.keys(data).length > 0
-    ? Object.entries(data).map(([name, value]) => ({ name, value }))
-    : defaultData;
+    ? Object.entries(data)
+        .map(([name, value]) => ({ name, value }))
+        .filter(d => d.value > 0)
+    : [];
 
   const total = chartData.reduce((sum, item) => sum + item.value, 0);
 

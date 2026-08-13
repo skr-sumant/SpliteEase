@@ -17,11 +17,11 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const menuItems = [
-    { id: "groups", name: "My Groups", icon: FaUsers },
-    { id: "add-expense", name: "Add Expense", icon: FaMoneyBillWave },
+    { id: "personal", name: "Personal Expenses", icon: FaMoneyBillWave },
+    { id: "groups", name: "Trip & Group Splits", icon: FaUsers },
     { id: "ocr-scan", name: "AI OCR Scanner", icon: FaCameraRetro },
+    { id: "ai-advisor", name: "AI Financial Advisor", icon: FaRobot },
     { id: "analytics", name: "AI Analytics", icon: FaChartLine },
-    { id: "notifications", name: "Reminders", icon: FaBell },
     { id: "profile", name: "My Profile", icon: FaUserCog }
   ];
 
@@ -142,7 +142,7 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }) {
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="text-[8px] font-bold truncate max-w-[48px]">
-                {item.id === "add-expense" ? "Add" : item.id === "ocr-scan" ? "Scan" : item.id === "ai-advisor" ? "AI" : item.id === "analytics" ? "Stats" : item.id === "notifications" ? "Notify" : item.id === "profile" ? "Profile" : "Groups"}
+                {item.id === "personal" ? "Personal" : item.id === "add-expense" ? "Add Group" : item.id === "ocr-scan" ? "Scan" : item.id === "analytics" ? "Stats" : item.id === "notifications" ? "Notify" : item.id === "profile" ? "Profile" : "Groups"}
               </span>
             </button>
           );

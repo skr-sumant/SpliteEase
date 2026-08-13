@@ -47,6 +47,11 @@ const userSchema = new mongoose.Schema(
       type: String
     },
 
+    monthlyBudget: {
+      type: Number,
+      default: 10000
+    },
+
     resetOTP: {
       type: String
     },
