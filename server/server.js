@@ -39,7 +39,7 @@ const startServer = async () => {
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (clientOrigins.includes(origin)) {
+      if (clientOrigins.includes(origin) || origin.endsWith(".vercel.app") || origin.includes("vercel.app")) {
         callback(null, true);
       } else {
         callback(null, false);
